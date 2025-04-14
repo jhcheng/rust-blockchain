@@ -1,0 +1,17 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug Rust Program",
+            "program": "${workspaceFolder}/target/debug/rust-blockchain",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "cargo build",
+            "cargo": {
+                "args": ["run"]
+            }
+        }
+    ]
+}
