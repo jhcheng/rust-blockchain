@@ -1,27 +1,29 @@
 use std::fs;
 use std::path::Path;
 
-use k256::{PublicKey, SecretKey};
-use k256::elliptic_curve::sec1::ToEncodedPoint;
-use sha3::{Digest, Shake256, Sha3_256, digest::{Update, ExtendableOutput, XofReader}};
-use rand_core::{OsRng, RngCore}; // requires 'getrandom' feature
-use serde::{ Serialize, Deserialize};
-use argon2::{self, PasswordHasher};
-use aes_gcm::{AeadCore, Aes256Gcm, Key, KeyInit, Nonce};
+use crate::tx::{SigTx, Tx};
 use aes_gcm::aead::Aead;
+use aes_gcm::{AeadCore, Aes256Gcm, Key, KeyInit, Nonce};
 use argon2::password_hash::SaltString;
-// 256-bit key for AES
+use argon2::{self, PasswordHasher};
+use k256::ecdsa::SigningKey;
+use k256::elliptic_curve::sec1::ToEncodedPoint;
+use k256::{PublicKey, SecretKey};
+use rand_core::{OsRng, RngCore};
+// requires 'getrandom' feature
+use serde::{Deserialize, Serialize};
+use sha3::{digest::{ExtendableOutput, Update, XofReader}, Digest, Keccak256, Shake256};
 
 const ENC_KEY_LEN: usize = 32;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct P256k1PublicKey {
+pub struct P256k1PublicKey {
     curve: String,
     x: Vec<u8>,
     y: Vec<u8>,
 }
 
-fn new_p256k1_public_key(pub_key: &PublicKey) -> P256k1PublicKey {
+pub fn new_p256k1_public_key(pub_key: &PublicKey) -> P256k1PublicKey {
     P256k1PublicKey {
         curve: "P-256k1".to_string(),
         x: pub_key.to_encoded_point(false).x().unwrap().to_vec(),
@@ -42,11 +44,11 @@ fn new_p256k1_private_key(prv_key: &SecretKey) -> P256k1PrivateKey {
     }
 }
 
-#[derive(Debug, Clone)]
-struct Address(String);
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Address(pub String);
 
 impl Address {
-    fn new(pub_key: &PublicKey) -> Self {
+    pub fn new(pub_key: &PublicKey) -> Self {
         let _pk = new_p256k1_public_key(&pub_key);
         let jpub = serde_json::to_vec(&_pk).unwrap();
         let mut hasher = Shake256::default();
@@ -54,16 +56,20 @@ impl Address {
         let boxed = hasher.finalize_boxed(32);
         Address(hex::encode(&boxed.to_vec()))
     }
+    
+    pub fn to_string(&self) -> String {
+        self.0.clone()
+    }
 }
 
 #[derive(Debug)]
-struct Account {
+pub struct Account {
     prv: SecretKey,
     addr: Address,
 }
 
 impl Account {
-    fn new() -> Self {
+    pub fn new() -> Self {
         let secret_key = SecretKey::random(&mut OsRng);
         let public_key = secret_key.public_key();
 
@@ -74,7 +80,7 @@ impl Account {
         }
     }
 
-    fn address(&self) -> &Address {
+    pub fn address(&self) -> &Address {
         &self.addr
     }
 
@@ -102,6 +108,15 @@ impl Account {
         let prv = SecretKey::from_slice(&pk.d).unwrap();
         let addr = Address::new(&prv.public_key());
         Ok(Account { prv, addr })
+    }
+
+    pub fn sign_tx(&self, tx: &Tx) -> SigTx {
+        let hash = tx.hash();
+        let signing_key = SigningKey::from_bytes(&self.prv.to_bytes()).unwrap();
+        let digest = Keccak256::new_with_prefix(&hash);
+        let (signature, _) = signing_key.sign_digest_recoverable(digest).unwrap();
+        let sig_tx = SigTx::new(tx, &signature.to_bytes().to_vec());
+        sig_tx
     }
 }
 
