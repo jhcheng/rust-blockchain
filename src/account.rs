@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::Path;
 
+use crate::block::{Block, SigBlock};
+use crate::genesis::{Genesis, SigGenesis};
 use crate::tx::{SigTx, Tx};
 use aes_gcm::aead::Aead;
 use aes_gcm::{AeadCore, Aes256Gcm, Key, KeyInit, Nonce};
@@ -44,22 +46,15 @@ fn new_p256k1_private_key(prv_key: &SecretKey) -> P256k1PrivateKey {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Address(pub String);
+pub type Address = String;
 
-impl Address {
-    pub fn new(pub_key: &PublicKey) -> Self {
-        let _pk = new_p256k1_public_key(&pub_key);
-        let jpub = serde_json::to_vec(&_pk).unwrap();
-        let mut hasher = Shake256::default();
-        hasher.update(&jpub);
-        let boxed = hasher.finalize_boxed(32);
-        Address(hex::encode(&boxed.to_vec()))
-    }
-    
-    pub fn to_string(&self) -> String {
-        self.0.clone()
-    }
+pub fn new_address(pub_key: &PublicKey) -> Address {
+    let _pk = new_p256k1_public_key(&pub_key);
+    let jpub = serde_json::to_vec(&_pk).unwrap();
+    let mut hasher = Shake256::default();
+    hasher.update(&jpub);
+    let boxed = hasher.finalize_boxed(32);
+    hex::encode(&boxed.to_vec())
 }
 
 #[derive(Debug)]
@@ -73,7 +68,7 @@ impl Account {
         let secret_key = SecretKey::random(&mut OsRng);
         let public_key = secret_key.public_key();
 
-        let addr = Address::new(&public_key);
+        let addr = new_address(&public_key);
         Account {
             prv: secret_key,
             addr,
@@ -84,16 +79,16 @@ impl Account {
         &self.addr
     }
 
-    fn write(&self, dir: &str, pass: &[u8]) -> std::io::Result<()> {
+    pub fn write(&self, dir: &str, pass: &[u8]) -> std::io::Result<()> {
         let jprv = self.encode_private_key()?;
         let cprv = encrypt_with_password(&jprv, pass);
         fs::create_dir_all(dir)?;
-        let path = Path::new(dir).join(&self.addr.0);
+        let path = Path::new(dir).join(&self.addr);
         fs::write(path, cprv.unwrap())?;
         Ok(())
     }
 
-    fn read_account(path: &str, pass: &[u8]) -> std::io::Result<Self> {
+    pub fn read_account(path: &str, pass: &[u8]) -> std::io::Result<Self> {
         let cprv = fs::read(path)?;
         let jprv = decrypt_with_password(&cprv.to_vec(), pass);
         Self::decode_private_key(&jprv.unwrap())
@@ -106,7 +101,7 @@ impl Account {
     fn decode_private_key(jprv: &[u8]) -> std::io::Result<Self> {
         let pk: P256k1PrivateKey = serde_json::from_slice(jprv)?;
         let prv = SecretKey::from_slice(&pk.d).unwrap();
-        let addr = Address::new(&prv.public_key());
+        let addr = new_address(&prv.public_key());
         Ok(Account { prv, addr })
     }
 
@@ -114,9 +109,25 @@ impl Account {
         let hash = tx.hash();
         let signing_key = SigningKey::from_bytes(&self.prv.to_bytes()).unwrap();
         let digest = Keccak256::new_with_prefix(&hash);
-        let (signature, _) = signing_key.sign_digest_recoverable(digest).unwrap();
-        let sig_tx = SigTx::new(tx, &signature.to_bytes().to_vec());
+        let (signature, rec_id) = signing_key.sign_digest_recoverable(digest).unwrap();
+        let sig_tx = SigTx::new(tx, &signature.to_bytes().to_vec(), rec_id.to_byte());
         sig_tx
+    }
+    
+    pub fn sign_gen(&self, genesis: Genesis) -> SigGenesis {
+        let hash = genesis.hash();
+        let signing_key = SigningKey::from_bytes(&self.prv.to_bytes()).unwrap();
+        let digest = Keccak256::new_with_prefix(&hash);
+        let (signature, rec_id) = signing_key.sign_digest_recoverable(digest).unwrap();
+        SigGenesis::new(genesis, &signature.to_bytes().to_vec(), rec_id.to_byte()).unwrap()
+    }
+    
+    pub fn sign_block(&self, block: Block) -> SigBlock {
+        let hash = block.hash();
+        let signing_key = SigningKey::from_bytes(&self.prv.to_bytes()).unwrap();
+        let digest = Keccak256::new_with_prefix(&hash);
+        let (signature, recid) = signing_key.sign_digest_recoverable(digest).unwrap();
+        SigBlock::new(block, &signature.to_bytes().to_vec(), recid.to_byte()).unwrap()
     }
 }
 
@@ -168,9 +179,8 @@ mod tests {
     fn test_account() {
         let account = Account::new();
         println!("Account: {:?}", account);
-        assert_eq!(account.address().0.len(), 64);
+        assert_eq!(account.address().len(), 64);
     }
-
 
     #[test]
     fn test_write_read() {
@@ -178,8 +188,8 @@ mod tests {
         let pass = b"password";
         let dir = "test_dir";
         account.write(dir, pass).unwrap();
-        let read_account = Account::read_account(&format!("{}/{}", dir, account.address().0), pass).unwrap();
-        assert_eq!(account.address().0, read_account.address().0);
+        let read_account = Account::read_account(&format!("{}/{}", dir, account.address()), pass).unwrap();
+        assert_eq!(account.address(), read_account.address());
         assert_eq!(account.prv.public_key().to_encoded_point(false).x().unwrap(), read_account.prv.public_key().to_encoded_point(false).x().unwrap());
         assert_eq!(account.prv.public_key().to_encoded_point(false).y().unwrap(), read_account.prv.public_key().to_encoded_point(false).y().unwrap());
         assert_eq!(account.prv.to_bytes(), read_account.prv.to_bytes());

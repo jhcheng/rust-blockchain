@@ -19,3 +19,6 @@ target/
 # Added by cargo
 
 /target
+
+.block_store/
+.key_store/
