@@ -2,6 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::block::{Block, SigBlock};
+use crate::common::ENC_KEY_LEN;
 use crate::genesis::{Genesis, SigGenesis};
 use crate::tx::{SigTx, Tx};
 use aes_gcm::aead::Aead;
@@ -15,8 +16,6 @@ use rand_core::{OsRng, RngCore};
 // requires 'getrandom' feature
 use serde::{Deserialize, Serialize};
 use sha3::{digest::{ExtendableOutput, Update, XofReader}, Digest, Keccak256, Shake256};
-
-const ENC_KEY_LEN: usize = 32;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct P256k1PublicKey {

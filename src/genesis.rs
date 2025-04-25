@@ -1,5 +1,6 @@
 use crate::account::{new_address, Address};
-use crate::tx::{new_hash, now, Hash};
+use crate::common::{new_hash, Hash};
+use crate::tx::now;
 use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 use k256::sha2::Digest;
 use k256::PublicKey;

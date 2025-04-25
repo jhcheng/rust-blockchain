@@ -4,62 +4,19 @@ use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 use k256::PublicKey;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
-use std::fmt::Display;
-use std::ops::Add;
-
-const HASH_LEN: usize = 32;
 
 #[cfg(not(test))]
 pub fn now() -> DateTime<FixedOffset> {
     Utc::now().with_timezone(&FixedOffset::east_opt(0).unwrap())
 }
 
-#[derive(Eq, PartialEq, Clone, Debug, Serialize, Deserialize, Default, Copy)]
-pub struct Hash([u8; HASH_LEN]);
-
-impl Display for Hash {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", hex::encode(self.0))
-    }
-}
-
-impl Hash {
-    pub fn to_string(&self) -> String {
-        hex::encode(self.0)
-    }
-
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-    
-}
-
-impl AsRef<[u8]> for Hash {
-    fn as_ref(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-pub fn new_hash(val : & impl Serialize) -> Hash {
-    let data = serde_json::to_vec(&val).unwrap();
-    let mut hasher = Keccak256::default();
-    hasher.update(&data);
-    let output = hasher.finalize();
-    let slice = output.as_slice();
-    let array = match slice.try_into() { 
-        Ok(array) => array,
-        Err(_) => panic!("Expected a hash of length {} but it was {}", HASH_LEN, slice.len()),
-    };
-    Hash(array)
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Tx {
-    from: Address,
-    to: Address,
-    value: u64,
-    nonce: u64,
-    time: u64,
+    pub from: Address,
+    pub to: Address,
+    pub value: u64,
+    pub nonce: u64,
+    pub(crate) time: u64,
 }
 
 impl Tx {
@@ -80,7 +37,7 @@ impl Tx {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SigTx {
-    tx: Tx,
+    pub tx: Tx,
     sig: Vec<u8>,
     rec_id: u8,
 }
@@ -89,10 +46,14 @@ impl SigTx {
     pub fn new(tx: &Tx, sig: &Vec<u8>, rec_id: u8) -> Self {
         SigTx { tx: tx.clone(), sig: sig.to_vec(), rec_id }
     }
+    
+    pub fn hash(&self) -> Hash {
+        new_hash(self)
+    }
 
 }
 
-fn verify_tx(sig_tx: SigTx) -> bool {
+pub fn verify_tx(sig_tx: SigTx) -> bool {
     let hash = sig_tx.tx.hash();
     let recovered_key = VerifyingKey::recover_from_digest(
         Keccak256::new_with_prefix(hash),
@@ -104,22 +65,12 @@ fn verify_tx(sig_tx: SigTx) -> bool {
     addr == sig_tx.tx.from
 }
 
-
-impl Add for Hash {
-    type Output = String;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        [self.to_string(), rhs.to_string()].concat()
-    }
-}
-
 pub fn tx_hash(tx: &SigTx) -> Hash {
     new_hash(tx)
 }
 
 pub fn tx_pair_hash(l : Hash, r : Hash) -> Hash {
-    let is_rhs_nill = r.0.into_iter().all(|b| b == 0);
-    if is_rhs_nill {
+    if r.is_empty() {
         l
     } else {
         new_hash(&(l + r))
@@ -134,6 +85,7 @@ struct SearchTx {
 mod tests {
     use super::*;
     use crate::account::Account;
+    use crate::common::HASH_LEN;
 
     #[test]
     fn test_new_hash() {
@@ -194,5 +146,6 @@ pub mod mock_time {
     }
 }
 
+use crate::common::{new_hash, Hash};
 #[cfg(test)]
 pub use mock_time::now;

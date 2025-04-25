@@ -151,7 +151,8 @@ fn merkle_verify<H: PartialEq + Eq + Clone + Default + Debug + Display>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tx::{new_hash, tx_pair_hash};
+    use crate::common::new_hash;
+    use crate::tx::tx_pair_hash;
 
     fn str_range(end: usize) -> Vec<String> {
         let mut slc = Vec::with_capacity(end);

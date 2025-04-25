@@ -1,6 +1,7 @@
 use crate::account::{new_address, Address};
+use crate::common::{new_hash, Hash};
 use crate::merkle::merkle_hash;
-use crate::tx::{new_hash, now, tx_hash, tx_pair_hash, Hash, SigTx};
+use crate::tx::{now, tx_hash, tx_pair_hash, SigTx};
 use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 use k256::sha2::Digest;
 use k256::PublicKey;
@@ -13,18 +14,18 @@ use std::{fs, io};
 
 const BLOCKS_FILE: &str = "block.store";
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Block {
-    number: u64,
-    parent: Hash,
-    txs: Vec<SigTx>,
+    pub(crate) number: u64,
+    pub(crate) parent: Hash,
+    pub(crate) txs: Vec<SigTx>,
     merkle_tree: Vec<Hash>,
-    merkle_root: Hash,
+    pub(crate) merkle_root: Hash,
     time: u64,
 }
 
 impl Block {
-    fn new(number: u64, parent: Hash, txs: &[SigTx]) -> Result<Self, String> {
+    pub(crate) fn new(number: u64, parent: Hash, txs: &[SigTx]) -> Result<Self, String> {
         let merkle_tree = merkle_hash(&txs, tx_hash, tx_pair_hash)?;
         let merkle_root = merkle_tree.to_vec()[0];
         let blk = Block {
@@ -43,7 +44,7 @@ impl Block {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct SigBlock {
     pub(crate) block: Block,
     pub(crate) sig: Vec<u8>,
@@ -54,7 +55,7 @@ impl SigBlock {
     pub fn new(block: Block, sig: &[u8], rec_id: u8) -> Result<Self, String> {
         Ok(SigBlock { block, sig: sig.to_vec(), rec_id })
     }
-    fn hash(&self) -> Hash {
+    pub(crate) fn hash(&self) -> Hash {
         new_hash(&self)
     }
 
